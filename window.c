@@ -5,23 +5,36 @@
  * \author Farès Belhadj amsi@up8.edu
  * \date February 14 2017, modified on March 24, 2024
  */
-
+#include <stdio.h>
 #include <GL4D/gl4duw_SDL2.h>
+#include <assert.h>
 #include <SDL_image.h>
 #include "assimp.h"
 #include <SDL2/SDL.h>
 #include <SDL_mixer.h>
 #include <GL4D/gl4du.h>
 #include <GL4D/gl4dp.h>
+#include <GL4D/gl4duw_SDL2.h>
+#include <SDL_ttf.h>
 
+# define DEG2RAD (M_PI / 180.0)
+#define GL4DH_INIT 0
+#define GL4DH_DRAW 1
+#define GL4DH_UPDATE_WITH_AUDIO 2
 /*!\brief opened window width */
 static int _windowWidth = 1024;
 /*!\brief opened window height */
 static int _windowHeight = 768;
 /*!\brief GLSL program Id */
 static GLuint _pId = 0;
-
+static Uint32 startTime = 0;
+static GLboolean displayCredits = GL_FALSE;
 Mix_Music *music = NULL;
+GLuint _texId[2] = {0};
+int horizon = 0;
+int vertical = 0;
+int espace = 0;
+
 /*!\brief enum that index keyboard mapping for direction commands */
 enum kyes_t {
   KLEFT = 0,
@@ -75,6 +88,13 @@ static void keydown(int keycode);
 static void keyup(int keycode);
 static void initAudio(const char * filename);
 static void inital();
+static void exemple_de_transition_00(void (* a0)(int), void (* a1)(int), Uint32 t, Uint32 et, int state);
+void animation1(int state);
+void animation2(int state);
+static void idle(void);
+static void initText(GLuint * ptId, const char * text);
+void scene_credit_creditant(GLuint _pId);
+
 /*!\brief the main function.
  */
 
@@ -84,6 +104,10 @@ static void inital(){
     _cam.y = 0.0f;
     _cam.z = 10.0f;
     _cam.theta = 0.0f;
+    if(TTF_Init() == -1) {
+          fprintf(stderr, "TTF_Init: %s\n", TTF_GetError());
+          exit(2);
+      }
     
     
 }
@@ -129,6 +153,10 @@ static void initGL(void) {
   glEnable(GL_CULL_FACE);
   glCullFace(GL_BACK);
   resize(_windowWidth, _windowHeight);
+  glEnable(GL_DEPTH_TEST);
+  glDepthFunc(GL_LEQUAL);
+  glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 }
 
 /*!\brief function called by GL4Dummies' loop at resize. Sets the
@@ -176,30 +204,44 @@ static void initAudio(const char * filename) {
     }
 }
 static void idle(void) {
-  static float t0 = 0.0f;
-  float t, dt, dtheta = M_PI, step = 1.0f;
-  dt = ((t = (float)gl4dGetElapsedTime()) - t0) / 1000.0f;
-  t0 = t;
-  if(_keys[KLEFT])
-    _cam.theta += dt * dtheta;
-  if(_keys[KRIGHT])
-    _cam.theta -= dt * dtheta;
-  if(_keys[KPAGEUP]) {
-    _cam.y += dt * 0.5f * step;
-  }
-  if(_keys[KPAGEDOWN]) {
-    _cam.y -= dt * 0.5f * step;
-  }
-  if(_keys[KUP]) {
-    _cam.x += -dt * step * sin(_cam.theta);
-    _cam.z += -dt * step * cos(_cam.theta);
-  }
-  if(_keys[KDOWN]) {
-    _cam.x += dt * step * sin(_cam.theta);
-    _cam.z += dt * step * cos(_cam.theta);
-  }
-  if(!_pause)
-    rot[1] += 90.0f * dt;
+    static float lastTime = 0.0f;
+    float currentTime = SDL_GetTicks() / 1000.0f; // 현재 시간을 초 단위로 계산
+    float frameTime = currentTime - lastTime; // 프레임 간 시간 간격을 계산
+    lastTime = currentTime;
+
+
+    float dtheta = M_PI, step = 1.0f;
+    if (startTime != 0) {
+            Uint32 elapsedTime = SDL_GetTicks() - startTime;
+            if (elapsedTime < 5000) {
+                exemple_de_transition_00(animation1, animation2, 5000, elapsedTime, GL4DH_DRAW);
+            } else {
+                startTime = 0;  // 전환 완료 후 startTime을 리셋
+            }
+        }
+        
+
+    if(_keys[KLEFT])
+        _cam.theta += frameTime * dtheta;
+    if(_keys[KRIGHT])
+        _cam.theta -= frameTime * dtheta;
+    if(_keys[KPAGEUP]) {
+        _cam.y += frameTime * 0.5f * step;
+    }
+    if(_keys[KPAGEDOWN]) {
+        _cam.y -= frameTime * 0.5f * step;
+    }
+    if(_keys[KUP]) {
+        _cam.x += -frameTime * step * sin(_cam.theta);
+        _cam.z += -frameTime * step * cos(_cam.theta);
+    }
+    if(_keys[KDOWN]) {
+        _cam.x += frameTime * step * sin(_cam.theta);
+        _cam.z += frameTime * step * cos(_cam.theta);
+    }
+    if(!_pause){
+        rot[1] += 90.0f * frameTime;
+    }
 }
 
 /*!\brief function called by GL4Dummies' loop at key-down (key
@@ -259,9 +301,19 @@ static void keydown(int keycode) {
   case 'l':
           inital();
           break;
+      
+  case GL4DK_t:
+          printf("T key pressed.\n");
+          startTime = SDL_GetTicks();
+          exemple_de_transition_00(animation1, animation2, 5000, 0, GL4DH_INIT);
+                     
           
+          break;
+      
   default:
-    break;
+          
+          
+          break;
   }
 }
 
@@ -298,6 +350,23 @@ static void keyup(int keycode) {
 /*!\brief function called on each GL4Dummies' display event. It draws
  * the scene with its given params.
  */
+static void exemple_de_transition_00(void (* a0)(int), void (* a1)(int), Uint32 t, Uint32 et, int state) {
+    static float alpha = 0.0f;
+    switch(state) {
+        case GL4DH_INIT:
+            alpha = 0.0f; // 알파 초기화
+            break;
+        case GL4DH_DRAW:
+            alpha = (float)et / t; // 시간 경과에 따라 알파 값 계산
+            if (alpha < 0.5f) {
+                if(a0) a0(state);
+            }
+            else {
+                if(a1) a1(state);
+            }
+            break;
+    }
+}
 static void draw(void) {
   GLfloat lum[4] = {0.0f, 0.0f, 5.0f, 1.0f};
   glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
@@ -369,25 +438,59 @@ static void draw(void) {
   gl4duScalef(10.0f, 10.0f, 10.0f);
   assimpDrawScene(_id_neptune);
   gl4duPopMatrix();
+  if (displayCredits) {
+      scene_credit_creditant(_pId);
+      }
   
 }
 
 /*!\brief function called at exit, it cleans all created GL4D objects.
  */
 static void mixCallback(void *udata, Uint8 *stream, int len) {
-    // 스트림 데이터를 Sint16 포인터로 캐스팅합니다.
-    // 이 예제에서는 오디오 포맷이 AUDIO_S16LSB(16비트 스테레오 리틀 엔디안)이라고 가정합니다.
+
     Sint16 *samples = (Sint16 *)stream;
     int i;
-    // len은 바이트 단위이므로, 샘플의 개수를 구하기 위해 2로 나눕니다(16비트 = 2바이트).
+
     int numSamples = len / 2;
 
-    // 각 샘플에 대해 루프를 돌면서 볼륨 조정을 수행합니다.
+
     for(i = 0; i < numSamples; i++) {
-        // 볼륨을 조정합니다. 여기서는 샘플 값을 2로 나누어 볼륨을 낮춥니다.
+
         samples[i] = samples[i] / 2;
     }
 }
+void animation1(int state) {
+    if(state == GL4DH_DRAW) {
+        glPushMatrix();
+        glTranslatef(-0.5f, 0.0f, -5.0f);
+        glColor3f(1.0f, 0.0f, 0.0f);
+        glBegin(GL_QUADS);
+        glVertex3f(-0.5f, -0.5f, 0.0f);
+        glVertex3f( 0.5f, -0.5f, 0.0f);
+        glVertex3f( 0.5f,  0.5f, 0.0f);
+        glVertex3f(-0.5f,  0.5f, 0.0f);
+        glEnd();
+        glPopMatrix();
+    }
+}
+
+void animation2(int state) {
+    if(state == GL4DH_DRAW) {
+        glPushMatrix();
+        glTranslatef(0.5f, 0.0f, -5.0f);
+        glColor3f(0.0f, 0.0f, 1.0f);
+        glBegin(GL_TRIANGLE_FAN);
+        glVertex2f(0.0f, 0.0f);
+        for(int i = 0; i <= 360; i++) {
+            float degInRad = i * DEG2RAD;
+            glVertex2f(cos(degInRad) * 0.5f, sin(degInRad) * 0.5f);
+        }
+        glEnd();
+        glPopMatrix();
+    }
+}
+
+
 
 static void quit(void) {
   gl4duClean(GL4DU_ALL);
@@ -395,6 +498,11 @@ static void quit(void) {
           Mix_FreeMusic(music);
           music = NULL;
       }
+    if(_texId[0]) {
+            glDeleteTextures(2, _texId);
+            _texId[0] = 0;
+        }
+    TTF_Quit();
     Mix_CloseAudio();
     Mix_Quit();
     SDL_Quit();
